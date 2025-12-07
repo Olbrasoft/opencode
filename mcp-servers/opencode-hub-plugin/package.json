@@ -1,0 +1,27 @@
+{
+  "name": "opencode-hub-plugin",
+  "version": "1.0.0",
+  "description": "OpenCode MCP plugin for VirtualAssistant agent hub integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "opencode",
+    "virtual-assistant",
+    "agent-hub"
+  ],
+  "author": "Olbrasoft",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}
