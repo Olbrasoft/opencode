@@ -48,6 +48,12 @@ MCP server for OpenCode integration with VirtualAssistant agent hub.
 | **Isolation** | Shared process | Process isolation |
 | **Use case** | Simple, fast integrations | Complex services, external systems |
 
+## Documentation
+
+- **[Deployment Guide](docs/Deployment-Guide.md)** - How to build and deploy automatically
+- **[Configuration](docs/Configuration.md)** - How to configure OpenCode
+- **[Home](docs/Home.md)** - Wiki home page
+
 ## Development
 
 Each plugin/server has its own `package.json` and can be developed independently:
@@ -56,13 +62,20 @@ Each plugin/server has its own `package.json` and can be developed independently
 # Notify plugin
 cd plugins/opencode-notify-plugin
 npm install
-npm run build
+npm run build          # Automatically deploys to ~/virtual-assistant/opencode/
 
 # Hub MCP server
 cd mcp-servers/opencode-hub-plugin
 npm install
-npm run build
+npm run build          # Automatically deploys to ~/virtual-assistant/opencode/
+
+# Deploy all projects
+./deploy-all.sh
 ```
+
+### Automatic Deployment
+
+All projects use **postbuild hooks** for automatic deployment after build. See [Deployment Guide](docs/Deployment-Guide.md) for details.
 
 ## Related Projects
 
