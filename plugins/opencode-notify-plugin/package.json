@@ -7,8 +7,11 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "postbuild": "./publish.sh",
     "watch": "tsc --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "publish:local": "./publish.sh",
+    "deploy": "npm run build"
   },
   "keywords": [
     "opencode",
