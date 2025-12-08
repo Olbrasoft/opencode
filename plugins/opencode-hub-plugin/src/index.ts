@@ -58,6 +58,14 @@ interface PendingMessage {
   createdAt: string
 }
 
+interface ActiveTask {
+  id: number
+  sourceAgent: string
+  content: string
+  sessionId: string
+  phase: string
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -112,6 +120,10 @@ async function startTask(
       const data = (await response.json()) as StartResponse
       log(`START: sessionId=${sessionId}, messageId=${data.messageId}, content="${summarize(content, 50)}"`)
       return data.messageId
+    } else if (response.status === 409) {
+      // 409 Conflict - session already exists in database
+      log(`START CONFLICT: sessionId=${sessionId} already exists, will try to recover`)
+      return null
     } else {
       log(`START ERROR: HTTP ${response.status} ${response.statusText}`)
       return null
@@ -204,6 +216,38 @@ async function checkPending(agent: string = "opencode"): Promise<PendingMessage[
   }
 }
 
+/**
+ * Get existing session messageId from Hub API
+ * Used to recover session tracking after plugin restart (409 Conflict scenario)
+ */
+async function getExistingSession(sessionId: string): Promise<number | null> {
+  try {
+    const response = await fetch(`${config.hubUrl}/active?agent=opencode`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const tasks = (await response.json()) as ActiveTask[]
+      const existing = tasks.find((t) => t.sessionId === sessionId)
+      if (existing) {
+        log(`FOUND EXISTING SESSION: sessionId=${sessionId}, messageId=${existing.id}`)
+        return existing.id
+      }
+      log(`NO EXISTING SESSION FOUND: sessionId=${sessionId}`)
+      return null
+    } else {
+      log(`GET EXISTING ERROR: HTTP ${response.status} ${response.statusText}`)
+      return null
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`GET EXISTING ERROR: ${errorMsg}`)
+    return null
+  }
+}
+
 // ============================================================================
 // Hub Plugin Implementation
 // ============================================================================
@@ -225,7 +269,17 @@ export const HubPlugin: Plugin = async ({ client }) => {
           log(`EVENT: session.created, sessionId=${sessionId}`)
 
           if (sessionId) {
-            const messageId = await startTask(sessionId, "New session started")
+            let messageId = await startTask(sessionId, "New session started")
+
+            // If 409 Conflict, try to recover existing session
+            if (messageId === null) {
+              log(`TRYING TO RECOVER SESSION: sessionId=${sessionId}`)
+              messageId = await getExistingSession(sessionId)
+              if (messageId !== null) {
+                log(`SESSION RECOVERED: sessionId=${sessionId}, messageId=${messageId}`)
+              }
+            }
+
             if (messageId !== null) {
               sessions.set(sessionId, {
                 messageId,
@@ -236,6 +290,7 @@ export const HubPlugin: Plugin = async ({ client }) => {
                 toolsUsed: new Set<string>(),
                 messageCount: 0,
               })
+              log(`SESSION TRACKING ACTIVE: sessionId=${sessionId}, messageId=${messageId}`)
             }
           }
         }
@@ -280,7 +335,17 @@ export const HubPlugin: Plugin = async ({ client }) => {
             const content = title ? summarize(title, 200) : "New conversation"
             log(`AUTO-CREATE SESSION: sessionId=${sessionId}, content="${content}"`)
 
-            const messageId = await startTask(sessionId, content)
+            let messageId = await startTask(sessionId, content)
+
+            // If startTask failed (possibly 409 Conflict), try to recover existing session
+            if (messageId === null) {
+              log(`TRYING TO RECOVER SESSION: sessionId=${sessionId}`)
+              messageId = await getExistingSession(sessionId)
+              if (messageId !== null) {
+                log(`SESSION RECOVERED: sessionId=${sessionId}, messageId=${messageId}`)
+              }
+            }
+
             if (messageId !== null) {
               sessions.set(sessionId, {
                 messageId,
@@ -291,7 +356,9 @@ export const HubPlugin: Plugin = async ({ client }) => {
                 toolsUsed: new Set<string>(),
                 messageCount: 1,
               })
-              log(`SESSION CREATED: sessionId=${sessionId}, messageId=${messageId}`)
+              log(`SESSION TRACKING ACTIVE: sessionId=${sessionId}, messageId=${messageId}`)
+            } else {
+              log(`SESSION TRACKING FAILED: sessionId=${sessionId} - could not create or recover`)
             }
             return
           }
