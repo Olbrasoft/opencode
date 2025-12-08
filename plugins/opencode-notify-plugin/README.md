@@ -10,17 +10,24 @@ npm install
 npm run build
 ```
 
-## Configuration
+The `npm run build` command automatically:
+1. Compiles TypeScript to JavaScript
+2. Publishes to `~/virtual-assistant/opencode/plugins/opencode-notify-plugin/` (archive location)
+3. **Installs to `~/.config/opencode/plugin/notify.js`** (active plugin location)
 
-Add to your `~/.config/opencode/opencode.json`:
+**Important:** OpenCode loads plugins from `~/.config/opencode/plugin/` directory. The plugin is automatically copied there during build.
 
-```json
-{
-  "plugins": {
-    "notify": "/path/to/VirtualAssistant/plugins/opencode-notify-plugin/dist/index.js"
-  }
-}
-```
+## How It Works
+
+OpenCode discovers plugins by scanning the `~/.config/opencode/plugin/` directory. When you run `npm run build`:
+
+1. TypeScript compiles `src/index.ts` → `dist/index.js`
+2. `postbuild` hook runs `publish.sh` which:
+   - Copies built files to `~/virtual-assistant/opencode/plugins/opencode-notify-plugin/` (published version)
+   - Copies `dist/index.js` to `~/.config/opencode/plugin/notify.js` (active plugin)
+3. Restart OpenCode to load the updated plugin
+
+**Note:** Symlinks don't work - the plugin file must be copied directly.
 
 ## Environment Variables
 

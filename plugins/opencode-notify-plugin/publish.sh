@@ -49,7 +49,15 @@ fi
 echo "✅ Files copied"
 echo
 
-# Step 4: Verify
+# Step 4: Copy to OpenCode plugin directory
+echo "🔌 Installing to OpenCode plugin directory..."
+OPENCODE_PLUGIN_DIR="$HOME/.config/opencode/plugin"
+mkdir -p "$OPENCODE_PLUGIN_DIR"
+cp "$SOURCE_DIR/dist/index.js" "$OPENCODE_PLUGIN_DIR/notify.js"
+echo "  ✓ Copied to $OPENCODE_PLUGIN_DIR/notify.js"
+echo
+
+# Step 5: Verify
 echo "🔍 Verifying published files..."
 if [ -f "$TARGET_DIR/dist/index.js" ]; then
     echo "  ✓ dist/index.js exists"
@@ -65,19 +73,21 @@ else
     exit 1
 fi
 
+if [ -f "$OPENCODE_PLUGIN_DIR/notify.js" ]; then
+    echo "  ✓ OpenCode plugin installed"
+else
+    echo "  ❌ OpenCode plugin installation failed!"
+    exit 1
+fi
+
 echo
 
-# Step 5: Show summary
+# Step 6: Show summary
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║                  ✅ Publish completed!                        ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
-echo "║  Plugin location: $TARGET_DIR"
-echo "║  Entry point: dist/index.js"
+echo "║  Published to: $TARGET_DIR"
+echo "║  Installed to: $OPENCODE_PLUGIN_DIR/notify.js"
 echo "║"
-echo "║  Add to ~/.config/opencode/opencode.json:"
-echo "║  {"
-echo "║    \"plugins\": {"
-echo "║      \"notify\": \"$TARGET_DIR/dist/index.js\""
-echo "║    }"
-echo "║  }"
+echo "║  Plugin is ready to use - restart OpenCode to load it."
 echo "╚══════════════════════════════════════════════════════════════╝"
