@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import type { Event } from "@opencode-ai/sdk"
 import { tool } from "@opencode-ai/plugin"
 import { appendFileSync, mkdirSync, existsSync } from "fs"
 
@@ -32,32 +31,25 @@ function log(message: string): void {
 // Types and Interfaces
 // ============================================================================
 
-/**
- * Configuration for Hub API connection
- */
 interface HubConfig {
   hubUrl: string
 }
 
-/**
- * Session state tracking
- */
 interface SessionState {
   messageId: number
   hasStarted: boolean
   lastProcessedMessageId: string | null
+  // Track actual conversation content
+  userMessages: string[]
+  assistantText: string
+  toolsUsed: Set<string>
+  messageCount: number
 }
 
-/**
- * Response from Hub API start endpoint
- */
 interface StartResponse {
   messageId: number
 }
 
-/**
- * Pending message from Hub API
- */
 interface PendingMessage {
   id: number
   sourceAgent: string
@@ -84,9 +76,6 @@ function loadConfig(): HubConfig {
 // Helper Functions
 // ============================================================================
 
-/**
- * Generate a brief summary from text
- */
 function summarize(text: string, maxLength: number = 200): string {
   if (!text) return ""
   const cleaned = text.replace(/\s+/g, " ").trim()
@@ -95,187 +84,217 @@ function summarize(text: string, maxLength: number = 200): string {
 }
 
 // ============================================================================
+// API Functions (module level)
+// ============================================================================
+
+const config = loadConfig()
+const sessions: Map<string, SessionState> = new Map()
+
+async function startTask(
+  sessionId: string,
+  content: string,
+  targetAgent: string = "user"
+): Promise<number | null> {
+  try {
+    const response = await fetch(`${config.hubUrl}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceAgent: "opencode",
+        content,
+        sessionId,
+        targetAgent,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = (await response.json()) as StartResponse
+      log(`START: sessionId=${sessionId}, messageId=${data.messageId}, content="${summarize(content, 50)}"`)
+      return data.messageId
+    } else {
+      log(`START ERROR: HTTP ${response.status} ${response.statusText}`)
+      return null
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`START ERROR: ${errorMsg}`)
+    return null
+  }
+}
+
+async function sendProgress(
+  parentMessageId: number,
+  content: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${config.hubUrl}/progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parentMessageId,
+        content,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      log(`PROGRESS: parentMessageId=${parentMessageId}, content="${summarize(content, 50)}"`)
+      return true
+    } else {
+      log(`PROGRESS ERROR: HTTP ${response.status} ${response.statusText}`)
+      return false
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`PROGRESS ERROR: ${errorMsg}`)
+    return false
+  }
+}
+
+async function completeTask(
+  parentMessageId: number,
+  content: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${config.hubUrl}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parentMessageId,
+        content,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      log(`COMPLETE: parentMessageId=${parentMessageId}, content="${summarize(content, 50)}"`)
+      return true
+    } else {
+      log(`COMPLETE ERROR: HTTP ${response.status} ${response.statusText}`)
+      return false
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`COMPLETE ERROR: ${errorMsg}`)
+    return false
+  }
+}
+
+async function checkPending(agent: string = "opencode"): Promise<PendingMessage[]> {
+  try {
+    const response = await fetch(`${config.hubUrl}/pending/${agent}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = (await response.json()) as PendingMessage[]
+      log(`CHECK: agent=${agent}, pending=${data.length}`)
+      return data
+    } else {
+      log(`CHECK ERROR: HTTP ${response.status} ${response.statusText}`)
+      return []
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`CHECK ERROR: ${errorMsg}`)
+    return []
+  }
+}
+
+// ============================================================================
 // Hub Plugin Implementation
 // ============================================================================
 
-/**
- * OpenCode Hub Plugin
- *
- * Automatically tracks session lifecycle events and reports them to
- * VirtualAssistant Hub API. Also provides manual tools for edge cases.
- *
- * Events tracked:
- * - session.created → Start task
- * - message.updated (assistant) → Progress update
- * - session.idle → Complete task
- */
-export const HubPlugin: Plugin = async () => {
-  const config = loadConfig()
-  const sessions: Map<string, SessionState> = new Map()
+log(`PLUGIN LOAD: hubUrl=${config.hubUrl}`)
 
-  log(`PLUGIN INIT: hubUrl=${config.hubUrl}`)
-
-  // ==========================================================================
-  // API Functions
-  // ==========================================================================
-
-  /**
-   * Start a new task in Hub API
-   */
-  async function startTask(
-    sessionId: string,
-    content: string,
-    targetAgent: string = "user"
-  ): Promise<number | null> {
-    try {
-      const response = await fetch(`${config.hubUrl}/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceAgent: "opencode",
-          content,
-          sessionId,
-          targetAgent,
-        }),
-        signal: AbortSignal.timeout(5000),
-      })
-
-      if (response.ok) {
-        const data = (await response.json()) as StartResponse
-        log(`START: sessionId=${sessionId}, messageId=${data.messageId}, content="${summarize(content, 50)}"`)
-        return data.messageId
-      } else {
-        log(`START ERROR: HTTP ${response.status} ${response.statusText}`)
-        return null
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      log(`START ERROR: ${errorMsg}`)
-      return null
-    }
-  }
-
-  /**
-   * Send progress update to Hub API
-   */
-  async function sendProgress(
-    parentMessageId: number,
-    content: string
-  ): Promise<boolean> {
-    try {
-      const response = await fetch(`${config.hubUrl}/progress`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parentMessageId,
-          content,
-        }),
-        signal: AbortSignal.timeout(5000),
-      })
-
-      if (response.ok) {
-        log(`PROGRESS: parentMessageId=${parentMessageId}, content="${summarize(content, 50)}"`)
-        return true
-      } else {
-        log(`PROGRESS ERROR: HTTP ${response.status} ${response.statusText}`)
-        return false
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      log(`PROGRESS ERROR: ${errorMsg}`)
-      return false
-    }
-  }
-
-  /**
-   * Complete a task in Hub API
-   */
-  async function completeTask(
-    parentMessageId: number,
-    content: string
-  ): Promise<boolean> {
-    try {
-      const response = await fetch(`${config.hubUrl}/complete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parentMessageId,
-          content,
-        }),
-        signal: AbortSignal.timeout(5000),
-      })
-
-      if (response.ok) {
-        log(`COMPLETE: parentMessageId=${parentMessageId}, content="${summarize(content, 50)}"`)
-        return true
-      } else {
-        log(`COMPLETE ERROR: HTTP ${response.status} ${response.statusText}`)
-        return false
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      log(`COMPLETE ERROR: ${errorMsg}`)
-      return false
-    }
-  }
-
-  /**
-   * Check pending messages from Hub API
-   */
-  async function checkPending(agent: string = "opencode"): Promise<PendingMessage[]> {
-    try {
-      const response = await fetch(`${config.hubUrl}/pending/${agent}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(5000),
-      })
-
-      if (response.ok) {
-        const data = (await response.json()) as PendingMessage[]
-        log(`CHECK: agent=${agent}, pending=${data.length}`)
-        return data
-      } else {
-        log(`CHECK ERROR: HTTP ${response.status} ${response.statusText}`)
-        return []
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      log(`CHECK ERROR: ${errorMsg}`)
-      return []
-    }
-  }
-
-  // ==========================================================================
-  // Plugin Return Object
-  // ==========================================================================
+export const HubPlugin: Plugin = async ({ client }) => {
+  log(`PLUGIN INIT: client available=${!!client}`)
 
   return {
-    /**
-     * Event handler for automatic session tracking
-     */
-    event: async ({ event }: { event: Event }) => {
+    event: async ({ event }: { event: any }) => {
       try {
+        // Log every event for debugging
+        log(`EVENT RECEIVED: type=${event.type}`)
+
         // Session created - initialize tracking
         if (event.type === "session.created") {
-          const sessionId = event.properties.info.id
+          const sessionId = (event.properties as any).info?.id
           log(`EVENT: session.created, sessionId=${sessionId}`)
 
-          const messageId = await startTask(sessionId, "Session started")
-          if (messageId !== null) {
-            sessions.set(sessionId, {
-              messageId,
-              hasStarted: true,
-              lastProcessedMessageId: null,
-            })
+          if (sessionId) {
+            const messageId = await startTask(sessionId, "New session started")
+            if (messageId !== null) {
+              sessions.set(sessionId, {
+                messageId,
+                hasStarted: true,
+                lastProcessedMessageId: null,
+                userMessages: [],
+                assistantText: "",
+                toolsUsed: new Set<string>(),
+                messageCount: 0,
+              })
+            }
+          }
+        }
+
+        // Message part updated - capture actual text content
+        if (event.type === "message.part.updated") {
+          const part = (event.properties as any).part
+          const sessionId = part?.sessionID
+          const partType = part?.type
+
+          const session = sessions.get(sessionId)
+          if (!session) return
+
+          // Capture text content
+          if (partType === "text" && part.text) {
+            // Check if this is a user message (has no parentID) or assistant
+            // We accumulate assistant text
+            session.assistantText += part.text
+            log(`PART: text captured, length=${part.text.length}`)
+          }
+
+          // Capture tool usage
+          if (partType === "tool" && part.tool) {
+            session.toolsUsed.add(part.tool)
+            log(`PART: tool used=${part.tool}`)
           }
         }
 
         // Message updated - track progress
         if (event.type === "message.updated") {
-          const message = event.properties.info
-          const sessionId = message.sessionID
-          const msgId = message.id
-          const role = message.role
+          const info = (event.properties as any).info
+          const sessionId = info?.sessionID
+          const msgId = info?.id
+          const role = info?.role
+
+          log(`EVENT: message.updated, role=${role}, sessionId=${sessionId}`)
+
+          // Auto-create session from first user message if not exists
+          if (sessionId && !sessions.has(sessionId) && role === "user") {
+            // Try to get actual user input from summary or title
+            const title = info?.summary?.title || info?.summary?.body
+            const content = title ? summarize(title, 200) : "New conversation"
+            log(`AUTO-CREATE SESSION: sessionId=${sessionId}, content="${content}"`)
+
+            const messageId = await startTask(sessionId, content)
+            if (messageId !== null) {
+              sessions.set(sessionId, {
+                messageId,
+                hasStarted: true,
+                lastProcessedMessageId: msgId,
+                userMessages: [content],
+                assistantText: "",
+                toolsUsed: new Set<string>(),
+                messageCount: 1,
+              })
+              log(`SESSION CREATED: sessionId=${sessionId}, messageId=${messageId}`)
+            }
+            return
+          }
 
           const session = sessions.get(sessionId)
 
@@ -284,39 +303,88 @@ export const HubPlugin: Plugin = async () => {
             return
           }
 
-          // User message - update task description with title if available
+          // User message - capture and send actual content
           if (role === "user" && session?.messageId) {
-            // UserMessage has summary property with title
-            const userMsg = message as { summary?: { title?: string } }
-            const title = userMsg.summary?.title
+            session.messageCount++
+            const title = info?.summary?.title || info?.summary?.body
             if (title) {
-              const summary = summarize(title)
-              await sendProgress(session.messageId, `User request: ${summary}`)
+              const userText = summarize(title, 300)
+              session.userMessages.push(userText)
+              await sendProgress(session.messageId, `User: ${userText}`)
               session.lastProcessedMessageId = msgId
-              log(`EVENT: message.updated (user), title="${summary}"`)
+              log(`EVENT: message.updated (user), text="${summarize(userText, 50)}"`)
             }
           }
 
-          // Assistant message - send progress (message completed)
+          // Assistant message - send progress with actual content when completed
           if (role === "assistant" && session?.messageId) {
-            // AssistantMessage has finish and cost properties
-            const assistantMsg = message as { finish?: string; cost?: number }
-            if (assistantMsg.finish) {
-              await sendProgress(session.messageId, `Assistant response completed`)
+            session.messageCount++
+            if (info?.finish) {
+              // Build response summary with tools used
+              let responseContent = ""
+
+              // Add accumulated text content (truncated)
+              if (session.assistantText) {
+                responseContent = summarize(session.assistantText, 400)
+              }
+
+              // Add tools used
+              if (session.toolsUsed.size > 0) {
+                const toolsList = Array.from(session.toolsUsed).join(", ")
+                responseContent += responseContent
+                  ? ` [Tools: ${toolsList}]`
+                  : `Used tools: ${toolsList}`
+              }
+
+              if (!responseContent) {
+                responseContent = "Response completed"
+              }
+
+              await sendProgress(session.messageId, `Assistant: ${responseContent}`)
+
+              // Reset for next response
+              session.assistantText = ""
               session.lastProcessedMessageId = msgId
-              log(`EVENT: message.updated (assistant), finish=${assistantMsg.finish}`)
+              log(`EVENT: message.updated (assistant), finish=${info.finish}, tools=${session.toolsUsed.size}`)
             }
           }
         }
 
-        // Session idle - complete the task
+        // Session idle - complete the task with summary
         if (event.type === "session.idle") {
-          const sessionId = event.properties.sessionID
+          const sessionId = (event.properties as any).sessionID
+          log(`EVENT: session.idle, sessionId=${sessionId}`)
+
           const session = sessions.get(sessionId)
           if (session?.messageId) {
-            await completeTask(session.messageId, "Session completed")
+            // Build completion summary
+            const parts: string[] = []
+
+            // Add message count
+            if (session.messageCount > 0) {
+              parts.push(`${session.messageCount} messages`)
+            }
+
+            // Add tools used summary
+            if (session.toolsUsed.size > 0) {
+              const toolsList = Array.from(session.toolsUsed).slice(0, 5).join(", ")
+              const moreTools = session.toolsUsed.size > 5 ? ` +${session.toolsUsed.size - 5} more` : ""
+              parts.push(`tools: ${toolsList}${moreTools}`)
+            }
+
+            // Add last user message as context
+            if (session.userMessages.length > 0) {
+              const lastUserMsg = session.userMessages[session.userMessages.length - 1]
+              parts.push(`last request: "${summarize(lastUserMsg, 100)}"`)
+            }
+
+            const completionContent = parts.length > 0
+              ? `Session completed (${parts.join(", ")})`
+              : "Session completed"
+
+            await completeTask(session.messageId, completionContent)
             sessions.delete(sessionId)
-            log(`EVENT: session.idle, sessionId=${sessionId}`)
+            log(`SESSION COMPLETE: messages=${session.messageCount}, tools=${session.toolsUsed.size}`)
           }
         }
       } catch (error) {
@@ -326,13 +394,7 @@ export const HubPlugin: Plugin = async () => {
       }
     },
 
-    /**
-     * Manual tools for edge cases
-     */
     tool: {
-      /**
-       * Manually start a new task
-       */
       hub_hub_start: tool({
         description:
           "Manually start tracking a new task in the Hub. Use this when automatic " +
@@ -346,7 +408,6 @@ export const HubPlugin: Plugin = async () => {
             .describe("Target agent (default: 'user')"),
         },
         async execute(args) {
-          // Generate a manual session ID
           const manualSessionId = `manual-${Date.now()}`
           const messageId = await startTask(
             manualSessionId,
@@ -359,6 +420,10 @@ export const HubPlugin: Plugin = async () => {
               messageId,
               hasStarted: true,
               lastProcessedMessageId: null,
+              userMessages: [args.content],
+              assistantText: "",
+              toolsUsed: new Set<string>(),
+              messageCount: 1,
             })
             return `Task started with messageId: ${messageId}`
           } else {
@@ -367,9 +432,6 @@ export const HubPlugin: Plugin = async () => {
         },
       }),
 
-      /**
-       * Manually send progress update
-       */
       hub_hub_progress: tool({
         description:
           "Send a progress update for an active task. Use the parentMessageId " +
@@ -388,9 +450,6 @@ export const HubPlugin: Plugin = async () => {
         },
       }),
 
-      /**
-       * Manually complete a task
-       */
       hub_hub_complete: tool({
         description:
           "Mark a task as complete. Use the parentMessageId from the start call.",
@@ -408,9 +467,6 @@ export const HubPlugin: Plugin = async () => {
         },
       }),
 
-      /**
-       * Check pending messages
-       */
       hub_hub_check: tool({
         description:
           "Check for pending messages from the Hub. Returns messages that need " +
@@ -436,5 +492,4 @@ export const HubPlugin: Plugin = async () => {
   }
 }
 
-// Default export for convenience
 export default HubPlugin
