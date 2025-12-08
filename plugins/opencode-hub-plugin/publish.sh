@@ -1,15 +1,15 @@
 #!/bin/bash
 set -e
 
-# OpenCode Hub Plugin (MCP Server) - Publish Script
-# Publishes built MCP server to production directory
+# OpenCode Hub Plugin - Publish Script
+# Publishes built plugin to production directory
 
 PROJECT_NAME="opencode-hub-plugin"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="$HOME/virtual-assistant/opencode/mcp-servers/$PROJECT_NAME"
+TARGET_DIR="$HOME/virtual-assistant/opencode/plugins/$PROJECT_NAME"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║         OpenCode Hub MCP Server - Publish Script            ║"
+echo "║           OpenCode Hub Plugin - Publish Script               ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo
 
@@ -45,11 +45,12 @@ fi
 echo "✅ Files copied"
 echo
 
-# Step 4: Install production dependencies
-echo "📦 Installing production dependencies in target..."
-cd "$TARGET_DIR"
-npm install --production --no-save
-echo "✅ Dependencies installed"
+# Step 4: Copy to OpenCode plugin directory
+echo "🔌 Installing to OpenCode plugin directory..."
+OPENCODE_PLUGIN_DIR="$HOME/.config/opencode/plugin"
+mkdir -p "$OPENCODE_PLUGIN_DIR"
+cp "$SOURCE_DIR/dist/index.js" "$OPENCODE_PLUGIN_DIR/hub.js"
+echo "  ✓ Copied to $OPENCODE_PLUGIN_DIR/hub.js"
 echo
 
 # Step 5: Verify
@@ -68,10 +69,10 @@ else
     exit 1
 fi
 
-if [ -d "$TARGET_DIR/node_modules/@modelcontextprotocol" ]; then
-    echo "  ✓ MCP SDK installed"
+if [ -f "$OPENCODE_PLUGIN_DIR/hub.js" ]; then
+    echo "  ✓ OpenCode plugin installed"
 else
-    echo "  ❌ MCP SDK missing!"
+    echo "  ❌ OpenCode plugin installation failed!"
     exit 1
 fi
 
@@ -81,17 +82,8 @@ echo
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║                  ✅ Publish completed!                        ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
-echo "║  MCP Server location: $TARGET_DIR"
-echo "║  Entry point: dist/index.js"
+echo "║  Published to: $TARGET_DIR"
+echo "║  Installed to: $OPENCODE_PLUGIN_DIR/hub.js"
 echo "║"
-echo "║  Add to ~/.config/opencode/opencode.json:"
-echo "║  {"
-echo "║    \"mcpServers\": {"
-echo "║      \"hub\": {"
-echo "║        \"type\": \"local\","
-echo "║        \"command\": [\"node\", \"$TARGET_DIR/dist/index.js\"],"
-echo "║        \"enabled\": true"
-echo "║      }"
-echo "║    }"
-echo "║  }"
+echo "║  Plugin is ready to use - restart OpenCode to load it."
 echo "╚══════════════════════════════════════════════════════════════╝"

@@ -1,0 +1,38 @@
+{
+  "name": "opencode-hub-plugin",
+  "version": "1.0.0",
+  "description": "OpenCode plugin for automatic session tracking with VirtualAssistant Hub API",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "./publish.sh",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "publish:local": "./publish.sh",
+    "deploy": "npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "hub",
+    "virtual-assistant",
+    "session-tracking"
+  ],
+  "author": "Olbrasoft",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Olbrasoft/opencode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Olbrasoft/opencode/issues"
+  },
+  "homepage": "https://github.com/Olbrasoft/opencode#readme",
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.0.0"
+  }
+}
