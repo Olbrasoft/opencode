@@ -66,6 +66,20 @@ interface ActiveTask {
   phase: string
 }
 
+interface SendTaskRequest {
+  source_agent: string
+  target_agent: string
+  content: string
+  github_issue: string
+  priority?: string
+}
+
+interface SendTaskResponse {
+  success: boolean
+  task_id: number
+  message: string
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -213,6 +227,48 @@ async function checkPending(agent: string = "opencode"): Promise<PendingMessage[
     const errorMsg = error instanceof Error ? error.message : String(error)
     log(`CHECK ERROR: ${errorMsg}`)
     return []
+  }
+}
+
+/**
+ * Send a task to another agent via the Hub API
+ * Used for OpenCode → Claude workflow
+ */
+async function sendTask(
+  targetAgent: string,
+  issueNumber: number,
+  content: string,
+  priority: string = "medium"
+): Promise<{ success: boolean; taskId?: number; message: string }> {
+  try {
+    const request: SendTaskRequest = {
+      source_agent: "opencode",
+      target_agent: targetAgent,
+      content,
+      github_issue: `#${issueNumber}`,
+      priority,
+    }
+
+    const response = await fetch(`${config.hubUrl}/send-task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = (await response.json()) as SendTaskResponse
+      log(`SEND_TASK: target=${targetAgent}, issue=#${issueNumber}, taskId=${data.task_id}`)
+      return { success: true, taskId: data.task_id, message: data.message }
+    } else {
+      const errorText = await response.text()
+      log(`SEND_TASK ERROR: HTTP ${response.status} ${errorText}`)
+      return { success: false, message: `HTTP ${response.status}: ${errorText}` }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    log(`SEND_TASK ERROR: ${errorMsg}`)
+    return { success: false, message: errorMsg }
   }
 }
 
@@ -553,6 +609,42 @@ export const HubPlugin: Plugin = async ({ client }) => {
             pending
               .map((m) => `- [${m.id}] ${m.sourceAgent}: ${m.content}`)
               .join("\n")
+        },
+      }),
+
+      hub_send_task: tool({
+        description:
+          "Send a task to another agent (typically Claude) for implementation. " +
+          "Use this to delegate coding tasks that OpenCode analyzed and prepared. " +
+          "Requires a GitHub issue number for traceability.",
+        args: {
+          target_agent: tool.schema
+            .string()
+            .describe("Target agent to receive the task (e.g., 'claude')"),
+          issue_number: tool.schema
+            .number()
+            .describe("GitHub issue number (required for traceability)"),
+          content: tool.schema
+            .string()
+            .describe("Task description and instructions for the target agent"),
+          priority: tool.schema
+            .string()
+            .optional()
+            .describe("Task priority: 'low', 'medium', 'high' (default: 'medium')"),
+        },
+        async execute(args) {
+          const result = await sendTask(
+            args.target_agent,
+            args.issue_number,
+            args.content,
+            args.priority ?? "medium"
+          )
+
+          if (result.success) {
+            return `Task sent to ${args.target_agent} (task_id: ${result.taskId}, issue: #${args.issue_number})`
+          } else {
+            return `Failed to send task: ${result.message}`
+          }
         },
       }),
     },

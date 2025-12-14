@@ -46,11 +46,14 @@ echo "✅ Files copied"
 echo
 
 # Step 4: Copy to OpenCode plugin directory
-echo "🔌 Installing to OpenCode plugin directory..."
+# DISABLED: Hub plugin auto-tracking was unreliable (incomplete sessions)
+# OpenCode won't write to agent_responses - only Claude will
+# To re-enable, uncomment the lines below
+echo "🔌 OpenCode plugin installation SKIPPED (disabled)"
 OPENCODE_PLUGIN_DIR="$HOME/.config/opencode/plugin"
-mkdir -p "$OPENCODE_PLUGIN_DIR"
-cp "$SOURCE_DIR/dist/index.js" "$OPENCODE_PLUGIN_DIR/hub.js"
-echo "  ✓ Copied to $OPENCODE_PLUGIN_DIR/hub.js"
+# mkdir -p "$OPENCODE_PLUGIN_DIR"
+# cp "$SOURCE_DIR/dist/index.js" "$OPENCODE_PLUGIN_DIR/hub.js"
+# echo "  ✓ Copied to $OPENCODE_PLUGIN_DIR/hub.js"
 echo
 
 # Step 5: Verify
@@ -69,12 +72,13 @@ else
     exit 1
 fi
 
-if [ -f "$OPENCODE_PLUGIN_DIR/hub.js" ]; then
-    echo "  ✓ OpenCode plugin installed"
-else
-    echo "  ❌ OpenCode plugin installation failed!"
-    exit 1
-fi
+# Verify OpenCode plugin (only if enabled)
+# if [ -f "$OPENCODE_PLUGIN_DIR/hub.js" ]; then
+#     echo "  ✓ OpenCode plugin installed"
+# else
+#     echo "  ❌ OpenCode plugin installation failed!"
+#     exit 1
+# fi
 
 echo
 
@@ -83,7 +87,8 @@ echo "╔═══════════════════════�
 echo "║                  ✅ Publish completed!                        ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Published to: $TARGET_DIR"
-echo "║  Installed to: $OPENCODE_PLUGIN_DIR/hub.js"
+echo "║  OpenCode plugin: DISABLED (not installed)"
 echo "║"
-echo "║  Plugin is ready to use - restart OpenCode to load it."
+echo "║  Note: Hub plugin auto-tracking disabled due to reliability issues."
+echo "║  The agent_responses table is now Claude-only."
 echo "╚══════════════════════════════════════════════════════════════╝"
