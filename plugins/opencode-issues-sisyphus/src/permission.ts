@@ -47,21 +47,8 @@ export const ISSUES_SISYPHUS_PERMISSION = {
     "git ls-files*": "allow" as const,
     "git blame*": "allow" as const,
 
-    // ===== GITHUB CLI - FULL ACCESS (NEW) =====
-    "gh issue *": "allow" as const,
-    "gh issue create*": "allow" as const,
-    "gh issue edit*": "allow" as const,
-    "gh issue delete*": "allow" as const,
-    "gh issue view*": "allow" as const,
-    "gh issue list*": "allow" as const,
-    "gh issue close*": "allow" as const,
-    "gh issue reopen*": "allow" as const,
-    "gh issue comment*": "allow" as const,
-    "gh api *": "allow" as const,
-    "gh auth status": "allow" as const,
-    "gh repo view*": "allow" as const,
-    "gh search *": "allow" as const,
-    "gh label *": "allow" as const,
+    // ===== GITHUB CLI - FULL ACCESS =====
+    "gh *": "allow" as const,
 
     // ===== DENY DESTRUCTIVE GIT OPERATIONS =====
     "git commit*": "deny" as const,
