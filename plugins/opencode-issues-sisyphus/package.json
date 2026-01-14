@@ -1,0 +1,38 @@
+{
+  "name": "opencode-issues-sisyphus",
+  "version": "1.0.0",
+  "description": "OpenCode plugin - Issues-Sisyphus agent (Planner-Sisyphus + GitHub issues + internet search)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "./publish.sh",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "publish:local": "./publish.sh",
+    "deploy": "npm run build"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "issues",
+    "github",
+    "planning",
+    "sisyphus"
+  ],
+  "author": "Olbrasoft",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Olbrasoft/opencode.git"
+  },
+  "peerDependencies": {
+    "oh-my-opencode": ">=2.14.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.0.0"
+  }
+}
